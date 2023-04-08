@@ -1,20 +1,27 @@
 ---
 version: "3"
 
-volumes:
-  db:
+#volumes:
+  #db:
   # logs:
 
 services:
-  db:
-    image: postgres:14
+  mongo:
+    image: mongo
     restart: always
     environment:
-      POSTGRES_USER: ${PG_USER}
-      POSTGRES_PASSWORD: ${PG_PASS}
-      POSTGRES_DB: ${PG_DB}
-    # volumes:
-    #   - "db:/var/lib/postgresql/data"
+      MONGO_INITDB_ROOT_USERNAME: ${MONGODB_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGODB_PASS}
+
+  mongo-express:
+    image: mongo-express
+    restart: always
+    ports:
+      - 8081:8081
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGODB_USER}
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGODB_PASS}
+      ME_CONFIG_MONGODB_URL: mongodb://${MONGODB_USER}:${MONGODB_PASS}@mongo:${MONGODB_PORT}/
 
   srv:
     build:
@@ -26,8 +33,8 @@ services:
       - .env
     # volumes:
     #   - "logs:/data"
-    depends_on:
-      - db
+    # depends_on:
+    #   - db
     labels:
       - "traefik.enable=true"
       - "traefik.http.services.rlt-hack-backend.loadbalancer.server.port=80"

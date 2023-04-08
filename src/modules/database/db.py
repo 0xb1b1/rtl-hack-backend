@@ -2,143 +2,132 @@
 
 # region Dependencies
 # from datetime import date, datetime, timedelta
-from time import sleep
-from sqlalchemy.orm import sessionmaker
-from .models import Base, User
-from sqlalchemy import create_engine
-# from typing import List, Union, Tuple
-from sqlalchemy.exc import OperationalError as sqlalchemyOpError
-from psycopg2 import OperationalError as psycopg2OpError
+# from time import sleep
+# from sqlalchemy.orm import sessionmaker
+# from .models import Base, User
+# from sqlalchemy import create_engine
+# # from typing import List, Union, Tuple
+# from sqlalchemy.exc import OperationalError as sqlalchemyOpError
+# from psycopg2 import OperationalError as psycopg2OpError
 # endregion
+from .models import User, Company
+from .models import AccessLevel
+from motor.motor_asyncio import AsyncIOMotorClient
+# from pydantic import BaseModel
+from typing import List, Dict
+
+from beanie import init_beanie  # Document, Indexed,
 
 
-class DBManager:
-    """Project database manager."""
+async def init_db(mongodb_user: str,
+                  mongodb_pass: str,
+                  mongodb_host: str,
+                  mongodb_port: str):
+    """Initialize the database manager.
 
-    def __init__(self,
-                 pg_user: str,
-                 pg_pass: str,
-                 pg_host: str,
-                 pg_port: str,
-                 pg_db: str,
-                 log=None):
-        """Initialize the database manager.
+    Pass MongoDB Credentials to initialize this manager.
+    """
+    client = AsyncIOMotorClient(f"mongodb://{mongodb_user}:\
+{mongodb_pass}@{mongodb_host}:{mongodb_port}")
+    await init_beanie(database=client.rlt_hack,
+                      document_models=[User,
+                                       Company])  # type: ignore
 
-        Pass PostgreSQL user, its password, host, and port, as well as
-        the database to be managed.
-        """
-        self.pg_user = pg_user
-        self.pg_pass = pg_pass
-        self.pg_host = pg_host
-        self.pg_port = pg_port
-        self.pg_db = pg_db
-        self.log = log
-        connected = False
-        while not connected:
-            try:
-                self._connect()
-            except (sqlalchemyOpError, psycopg2OpError):
-                sleep(2)
-            else:
-                connected = True
-        self._update_db()
 
-    def __del__(self):
-        """Close the database connection when the object is destroyed."""
-        self._close()
+async def is_user(user_email: str) -> bool:
+    """Check if the user exists in the database."""
+    return await User.find_one(User.email == user_email) is not None
 
-    # region Connection setup
-    def _connect(self) -> None:
-        """Connect to the postgresql database."""
-        self.engine = create_engine(f'postgresql+psycopg2://{self.pg_user}:\
-{self.pg_pass}@{self.pg_host}:{self.pg_port}/{self.pg_db}',
-                                    pool_pre_ping=True)
-        Base.metadata.bind = self.engine
-        db_session = sessionmaker(bind=self.engine)
-        self.session = db_session()
 
-    def _close(self) -> None:
-        """Close the database connection."""
-        self.session.close_all()
+async def is_company(company_inn: int) -> bool:
+    """Check if the company exists in the database."""
+    return await Company.find_one(Company.inn == company_inn) is not None
 
-    def _recreate_tables(self) -> None:
-        """Recreate tables in the database."""
-        Base.metadata.drop_all(self.engine)
-        Base.metadata.create_all(self.engine)
 
-    def _update_db(self) -> None:
-        """Create the database structure if it doesn't exist (update)."""
-        # Create the tables if they don't exist
-        Base.metadata.create_all(self.engine)
-    # endregion
+async def add_user(email: str,
+                   password_hash: str,
+                   name: str,
+                   surname: str):
+    """Add a user to the database."""
+    user = User(email=email,
+                password_hash=password_hash,
+                first_name=name,
+                last_name=surname,
+                companies=[])
+    await User.insert_one(user)
 
-    def is_user(self, user_email: str) -> bool:
-        """Check if the user exists in the database."""
-        return (self.session
-                .query(User)
-                .filter_by(email=user_email)
-                .first()
-                is not None)
 
-    def add_user(self,
-                 email: str,
-                 password_hash: str,
-                 name: str,
-                 surname: str):
-        """Add a user to the database."""
-        user = User(email=email,
-                    password_hash=password_hash,
-                    first_name=name,
-                    last_name=surname)
-        self.session.add(user)
-        self.session.commit()
+async def get_user(user_email: str) -> User | None:
+    """Get the user from the database."""
+    user = await User.find_one(User.email == user_email)
+    return user
 
-    def get_user(self, user_email: str) -> User | None:
-        """Get the user from the database."""
-        return self.session.query(User).filter_by(email=user_email).first()
 
-    def get_password_hash(self, user_email: str) -> str:
-        """Get password hash stored in the database."""
-        user = (self.session
-                .query(User)
-                .filter_by(email=user_email)
-                .first())
-        assert user is not None  # noset
-        return (user.password_hash)
+async def get_password_hash(user_email: str) -> str:
+    """Get password hash stored in the database."""
+    user = await User.find_one(User.email == user_email)
+    assert user is not None
+    return user.password_hash
 
-    def get_user_id(self, user_email: str) -> int:
-        """Get the user id from the database."""
-        user = (self.session
-                .query(User)
-                .filter_by(email=user_email)
-                .first())
-        assert user is not None  # noset
-        return user.id
 
-    def update_user_password(self, user_email: str, password_hash: str):
-        """Update the user password in the database."""
-        user = self.session.query(User).filter_by(email=user_email).first()
-        assert user is not None  # noset
-        user.password_hash = password_hash
-        self.session.commit()
+async def update_user_password(user_email: str, password_hash: str):
+    """Update the user password in the database."""
+    await (User.find_one(User.email == user_email)
+           .set({User.password_hash: password_hash}))
 
-    def update_user_email(self, user_email: str, new_email: str):
-        """Update the user email in the database."""
-        user = self.session.query(User).filter_by(email=user_email).first()
-        assert user is not None  # noset
-        user.email = new_email
-        self.session.commit()
 
-    def update_user_first_name(self, user_email: str, name: str):
-        """Update the user name in the database."""
-        user = self.session.query(User).filter_by(email=user_email).first()
-        assert user is not None  # noset
-        user.first_name = name
-        self.session.commit()
+async def update_user_email(user_email: str, new_email: str):
+    """Update the user email in the database."""
+    await (User.find_one(User.email == user_email)
+           .set({User.email: new_email}))
 
-    def update_user_last_name(self, user_email: str, surname: str):
-        """Update the user surname in the database."""
-        user = self.session.query(User).filter_by(email=user_email).first()
-        assert user is not None  # noset
-        user.last_name = surname
-        self.session.commit()
+
+async def update_user_first_name(user_email: str, name: str):
+    """Update the user name in the database."""
+    await (User.find_one(User.email == user_email)
+           .set({User.first_name: name}))
+
+
+async def update_user_last_name(user_email: str, surname: str):
+    """Update the user surname in the database."""
+    await (User.find_one(User.email == user_email)
+           .set({User.last_name: surname}))
+
+
+async def get_user_companies(user_email: str) -> List[Dict[int, AccessLevel]]:
+    """Get the user companies from the database."""
+    user = await User.find_one(User.email == user_email)
+    assert user is not None
+    # Add company names to all return dicts
+    companies = user.companies
+    for company in companies:
+        company["name"] = ((await Company.find_one(Company.inn ==
+                                                   company["inn"]))
+                           .name)  # type: ignore
+    return companies
+
+
+async def add_user_company(user_email: str,
+                           company_name: str,
+                           company_inn: int):
+    """Create a new company and assign the user as its AccessType.OWNER."""
+    user = await User.find_one(User.email == user_email)
+    assert user is not None
+    companies = user.companies
+    await Company.insert_one(Company(name=company_name, inn=company_inn))
+    companies.append({"inn": company_inn,
+                      "access": AccessLevel.OWNER})
+    await user.set({User.companies: companies})  # type: ignore
+
+
+async def del_user_company(user_email: str, company_inn: int):
+    """Delete the user company from the database."""
+    user = await User.find_one(User.email == user_email)
+    assert user is not None
+    companies = user.companies
+    new_companies: List[dict] = []
+    for company in companies:
+        if company["inn"] != company_inn:
+            new_companies.append(company)
+    await (User.find_one(User.email == user_email)
+           .set({User.companies: new_companies}))  # type: ignore

@@ -7,9 +7,10 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
-from modules.database.db import DBManager
-from modules.database.models import User, Company
-from modules.database.models import CompanyClearanceLevel
+from modules.database.db import init_db, add_user, is_user, get_user, \
+    get_password_hash, get_user_companies
+from modules.database.db import is_company, add_user_company
+from modules.database.models import User  # , Company
 from modules.fastapi_utils import Token, TokenData, UserModel  # , UserInDB
 
 # `openssl rand -hex 32``
@@ -24,28 +25,21 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 app = FastAPI()
 
-db = DBManager(getenv("PG_USER", ""),
-               getenv("PG_PASS", ""),
-               getenv("PG_HOST", ""),
-               getenv("PG_PORT", ""),
-               getenv("PG_DB", ""))
-
-
 # def verify_password(plain_password, hashed_password) -> bool:
 #     return pwd_context.verify(plain_password, hashed_password)
 
 
-def get_password_hash(password: str) -> str:
+def gen_password_hash(password: str) -> str:
     """Get hash from supplied string."""
     return pwd_context.hash(password)
 
 
-def authenticate_user(email: str, password: str) -> User | None:
+async def authenticate_user(email: str, password: str):
     """Return User DB object on successful authentication."""
-    user = db.get_user(email)
+    user = await get_user(email)
     if not user:
         return None
-    if not pwd_context.verify(password, db.get_password_hash(email)):
+    if not pwd_context.verify(password, await get_password_hash(email)):
         return None
     return user
 
@@ -80,7 +74,7 @@ async def get_current_user(
     except JWTError:
         raise credentials_exception
     assert isinstance(token_data.username, str)  # nosec
-    user = db.get_user(username)
+    user = await get_user(username)
     if user is None:
         raise credentials_exception
     assert user is not None  # nosec
@@ -93,6 +87,15 @@ async def convert_user(user: User) -> UserModel:
     return UserModel(username=str(user.email),
                      first_name=str(user.first_name),
                      last_name=str(user.last_name))
+
+
+@app.on_event("startup")
+async def start_db():
+    """Start database on FastAPI startup."""
+    await init_db(getenv("MONGODB_USER", ""),
+                  getenv("MONGODB_PASS", ""),
+                  getenv("MONGODB_HOST", ""),
+                  getenv("MONGODB_PORT", ""))
 
 
 @app.get("/")
@@ -116,7 +119,7 @@ async def signup_and_get_access_token(
     :return: A dictionary containing the access token and token type.
     """
     # Check if the user already exists
-    existing_user = db.get_user(email)
+    existing_user = await is_user(email)
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -124,8 +127,8 @@ async def signup_and_get_access_token(
         )
 
     # Create a new user
-    hashed_password = get_password_hash(password)
-    db.add_user(email, hashed_password, name, surname)
+    hashed_password = gen_password_hash(password)
+    await add_user(email, hashed_password, name, surname)
 
     # Generate and return access token
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -140,7 +143,7 @@ async def login_for_access_token(
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()]
 ):
     """Provide user with a JWT token on successful authentication."""
-    user = authenticate_user(form_data.username, form_data.password)
+    user = await authenticate_user(form_data.username, form_data.password)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -154,14 +157,37 @@ async def login_for_access_token(
     return {"access_token": access_token, "token_type": "bearer"}
 
 
-@app.get("/users/me/", response_model=UserModel)
-async def read_users_me(
+@app.get("/user", response_model=UserModel)
+async def current_user_read(
     current_user: Annotated[UserModel, Depends(get_current_user)]
 ):
-    """[Test] Return user's details."""
+    """Return user's details."""
     return current_user
 
 
-# @app.get()
+@app.get("/user/companies")
+async def current_user_companies_read(
+    current_user: Annotated[UserModel, Depends(get_current_user)]
+):
+    """Return user's companies."""
+    return await get_user_companies(current_user.username)
 
-# @app.post(
+
+@app.post("/user/companies/create")
+async def current_user_companies_create(
+    current_user: Annotated[UserModel, Depends(get_current_user)],
+    company_name: str,
+    company_inn: int
+):
+    """Create a new company and assign current user as AccessType.OWNER.
+
+    Raise HTTPException if the company already exists.
+    """
+    company = await is_company(company_inn)
+    if company:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Company with this INN already exists",
+        )
+    await add_user_company(current_user.username, company_name, company_inn)
+    return {"message": "Company created"}
