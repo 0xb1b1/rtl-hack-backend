@@ -1,4 +1,5 @@
 """FastAPI helper utils and classes."""
+from typing import Optional
 from pydantic import BaseModel
 
 
@@ -21,6 +22,9 @@ class UserModel(BaseModel):
     username: str
     first_name: str
     last_name: str
+    phone_number: int
+    country: Optional[str] = None
+    city: Optional[str] = None
 
 
 class UserInDB(UserModel):

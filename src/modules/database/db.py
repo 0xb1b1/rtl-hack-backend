@@ -1,21 +1,11 @@
 """SQLAlchemy database management."""
 
-# region Dependencies
-# from datetime import date, datetime, timedelta
-# from time import sleep
-# from sqlalchemy.orm import sessionmaker
-# from .models import Base, User
-# from sqlalchemy import create_engine
-# # from typing import List, Union, Tuple
-# from sqlalchemy.exc import OperationalError as sqlalchemyOpError
-# from psycopg2 import OperationalError as psycopg2OpError
-# endregion
-from .models import User, Company
-from .models import AccessLevel
+from typing import Optional
+from .models import User  # , UserAchievements, CustomListing, CustomListingBid
+# from .models import Achievement
+# from .models import CustomListingKind
 from motor.motor_asyncio import AsyncIOMotorClient
 # from pydantic import BaseModel
-from typing import List, Dict
-
 from beanie import init_beanie  # Document, Indexed,
 
 
@@ -30,8 +20,7 @@ async def init_db(mongodb_user: str,
     client = AsyncIOMotorClient(f"mongodb://{mongodb_user}:\
 {mongodb_pass}@{mongodb_host}:{mongodb_port}")
     await init_beanie(database=client.rlt_hack,
-                      document_models=[User,
-                                       Company])  # type: ignore
+                      document_models=[User])  # type: ignore
 
 
 async def is_user(user_email: str) -> bool:
@@ -41,19 +30,42 @@ async def is_user(user_email: str) -> bool:
 
 async def is_company(company_inn: int) -> bool:
     """Check if the company exists in the database."""
-    return await Company.find_one(Company.inn == company_inn) is not None
+    return await User.find_one(company_inn == company_inn) is not None
+
+
+async def is_company_accessible(user_email: str, company_inn: int) -> bool:
+    """Check if the company INN is free or belongs to the user."""
+    owner = await User.find_one({"company_inn": company_inn})
+    if owner is None:
+        return True
+    if owner.email == user_email:
+        return True
+    return False
+
+
+async def is_company_owner(user_email: str, company_inn: int) -> bool:
+    """Check if the user owns the company INN."""
+    return await User.find_one(User.email == user_email,
+                               User.company_inn == company_inn) is not None
 
 
 async def add_user(email: str,
                    password_hash: str,
                    name: str,
-                   surname: str):
+                   surname: str,
+                   phone_number: int,
+                   country: Optional[str],
+                   city: Optional[str]):
     """Add a user to the database."""
     user = User(email=email,
                 password_hash=password_hash,
                 first_name=name,
                 last_name=surname,
-                companies=[])
+                phone_number=phone_number,
+                country=country,
+                city=city,
+                company_inn=None,
+                company_name=None)
     await User.insert_one(user)
 
 
@@ -77,57 +89,59 @@ async def update_user_password(user_email: str, password_hash: str):
 
 
 async def update_user_email(user_email: str, new_email: str):
-    """Update the user email in the database."""
+    """Update the user's email in the database."""
     await (User.find_one(User.email == user_email)
            .set({User.email: new_email}))
 
 
 async def update_user_first_name(user_email: str, name: str):
-    """Update the user name in the database."""
+    """Update the user's name in the database."""
     await (User.find_one(User.email == user_email)
            .set({User.first_name: name}))
 
 
 async def update_user_last_name(user_email: str, surname: str):
-    """Update the user surname in the database."""
+    """Update the user's surname in the database."""
     await (User.find_one(User.email == user_email)
            .set({User.last_name: surname}))
 
 
-async def get_user_companies(user_email: str) -> List[Dict[int, AccessLevel]]:
+async def update_user_phone_number(user_email: str, phone_number: int):
+    """Update the user's phone number in the database."""
+    await (User.find_one(User.email == user_email)
+           .set({User.phone_number: phone_number}))  # type: ignore
+
+
+async def update_user_country(user_email: str, country: str | None):
+    """Update the user's country in the database."""
+    await (User.find_one(User.email == user_email)
+           .set({User.country: country}))  # type: ignore
+
+
+async def update_user_city(user_email: str, city: str | None):
+    """Update the user's city in the database."""
+    await (User.find_one(User.email == user_email)
+           .set({User.city: city}))  # type: ignore
+
+
+async def set_user_company_name(user_email: str, company_name: str | None):
+    """Set user's company name in the database."""
+    await (User.find_one(User.email == user_email)
+           .set({User.company_name: company_name}))  # type: ignore
+
+
+async def set_user_company_inn(user_email: str, company_inn: int | None):
+    """Set user's company INN in the database."""
+    await (User.find_one(User.email == user_email)
+           .set({User.company_inn: company_inn}))  # type: ignore
+
+
+async def get_user_company(user_email: str) -> dict:
     """Get the user companies from the database."""
     user = await User.find_one(User.email == user_email)
     assert user is not None
-    # Add company names to all return dicts
-    companies = user.companies
-    for company in companies:
-        company["name"] = ((await Company.find_one(Company.inn ==
-                                                   company["inn"]))
-                           .name)  # type: ignore
-    return companies
+    return {"company_name": user.company_name,
+            "company_inn": user.company_inn}
 
 
-async def add_user_company(user_email: str,
-                           company_name: str,
-                           company_inn: int):
-    """Create a new company and assign the user as its AccessType.OWNER."""
-    user = await User.find_one(User.email == user_email)
-    assert user is not None
-    companies = user.companies
-    await Company.insert_one(Company(name=company_name, inn=company_inn))
-    companies.append({"inn": company_inn,
-                      "access": AccessLevel.OWNER})
-    await user.set({User.companies: companies})  # type: ignore
-
-
-async def del_user_company(user_email: str, company_inn: int):
-    """Delete the user company from the database."""
-    user = await User.find_one(User.email == user_email)
-    assert user is not None
-    companies = user.companies
-    new_companies: List[dict] = []
-    for company in companies:
-        if company["inn"] != company_inn:
-            new_companies.append(company)
-    await (User.find_one(User.email == user_email)
-           .set({User.companies: new_companies}))  # type: ignore
+# async def add_company_listing(user_email: str, listi):
