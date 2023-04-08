@@ -1,0 +1,36 @@
+---
+version: "3"
+
+volumes:
+  db:
+  # logs:
+
+services:
+  db:
+    image: postgres:14
+    restart: always
+    environment:
+      POSTGRES_USER: ${PG_USER}
+      POSTGRES_PASSWORD: ${PG_PASS}
+      POSTGRES_DB: ${PG_DB}
+    # volumes:
+    #   - "db:/var/lib/postgresql/data"
+
+  srv:
+    build:
+      context: ./src
+      dockerfile: Dockerfile
+    image: 0xb1b1/rlt-hack-backend:latest
+    restart: always
+    env_file:
+      - .env
+    # volumes:
+    #   - "logs:/data"
+    depends_on:
+      - db
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.rlt-hack-backend.loadbalancer.server.port=80"
+      - "traefik.http.routers.rlt-hack-backend.rule=Host(`rlt-backend.seizure.icu`)"
+      - "traefik.http.routers.rlt-hack-backend.entrypoints=websecure"
+      - "traefik.http.routers.rlt-hack-backend.tls=true"
