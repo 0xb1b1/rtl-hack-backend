@@ -1,7 +1,6 @@
 """Models for Beanie."""
 from beanie import Document, PydanticObjectId
-from enum import Enum
-# from typing import List
+from typing import List
 from pydantic import BaseModel, Field
 from datetime import datetime
 
@@ -14,25 +13,34 @@ class Achievement(BaseModel):
     points: int
 
 
-# Beanie enum for access levels
-class CustomListingKind(str, Enum):
-    """Custom listing kinds."""
+# # Beanie enum for access levels
+# class CustomListingKind(str, Enum):
+#     """Custom listing kinds."""
 
-    FEDERAL_44 = "federal_44"
+#     FEDERAL_44 = "federal_44"
+
+# # Beanie enum for Script type
+# class ScriptKind(str, Enum):
+#     """Script kinds."""
+
+#     SUPPLIER = "supplier"
+#     CUSTOMER = "customer"
+#     ALL = "all"
 
 
 class User(Document):
     """User model for Beanie."""
 
     email: str
-    password_hash: str
-    first_name: str
-    last_name: str
-    phone_number: int
+    passwordHash: str
+    firstName: str
+    lastName: str
+    phoneNumber: int
+    isAdmin: bool = False
     country: str | None = None
     city: str | None = None
-    company_name: str | None = None
-    company_inn: int | None = None
+    companyName: str | None = None
+    companyInn: int | None = None
 
 
 class UserAchievements(Document):
@@ -40,7 +48,7 @@ class UserAchievements(Document):
 
     userId: PydanticObjectId
     achievement: Achievement
-    ts: datetime = Field(default_factory=datetime.now)
+    ts: datetime = Field(default_factory=datetime.now)  # type: ignore
 
 
 class CustomListing(Document):
@@ -48,11 +56,14 @@ class CustomListing(Document):
 
     trackingId: int
     lot: int
-    kind: CustomListingKind
+    kind: str
     name: str
+    description: str
     companyInn: int
     basePrice: float
+    isActive: bool
     tsEnd: datetime
+    dynamic: int
     tsBegin: datetime = Field(default_factory=datetime.now)
     winnerInn: int | None = None
 
@@ -63,5 +74,49 @@ class CustomListingBid(Document):
     listingTrackingId: int
     listingLot: int
     bidderInn: int
-    bidPrice: int
+    bidPrice: float
     ts: datetime = Field(default_factory=datetime.now)
+
+
+class StatisticsProto(Document):
+    """Statistics prototype model for Beanie."""
+
+    daily: List[List[dict]] | None
+    monthly: List[List[dict]] | None
+    yearly: List[List[dict]] | None
+
+
+# region Events
+class Metric(Document):
+    """Metric model for Beanie."""
+
+    name: str
+    history: dict  # {'supplier': [...], 'customer': [...], 'all': [...]}
+
+
+class TaskGoal(Document):
+    """Task goal model for Beanie."""
+
+    name: str
+    target: dict  # {"kind": "full-profile", "count": 1}
+
+
+class Task(Document):
+    """Task model for Beanie."""
+
+    name: str
+    description: str
+    daysToComplete: int
+    taskGoals: List[str]  # TaskGoal names
+    metrics: List[str]  # ["CRR", "CR", "ROI/ROMI"]
+
+
+class Script(Document):
+    """Script model for Beanie."""
+
+    name: str
+    description: str
+    tasks: List[str]  # Task names
+    metrics: list  # Metric, Weight
+    kind: str  # "all" / ...
+# endregion

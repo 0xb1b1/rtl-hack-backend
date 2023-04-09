@@ -4,10 +4,10 @@ from fastapi import Depends, APIRouter, HTTPException, status
 
 from modules.database.db import is_company_accessible, get_user_company, \
     set_user_company_inn, set_user_company_name, update_user_first_name, \
-    update_user_last_name
-# from modules.database.models import User  # , Company
-from modules.fastapi_utils import UserModel  # , Token, TokenData, UserInDB
-from .tools import get_current_user
+    update_user_last_name, get_user
+from modules.database.models import User
+from modules.fastapi_utils import UserModel, UserEditModel
+from .tools import get_current_user, convert_user
 
 
 router = APIRouter()
@@ -20,6 +20,47 @@ async def current_user_read(
 ):
     """Return user's details."""
     return current_user
+
+
+@router.post("/user", response_model=UserModel)
+async def current_user_write(
+    current_user: Annotated[UserModel, Depends(get_current_user)],
+    data: UserEditModel
+):
+    """Edit the user's details.
+
+    Available for editing: first_name, last_name, phone_number, \
+country, city
+    """
+    user_db = await get_user(current_user.username)
+    if user_db is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User is not found in the database",
+        )
+    (await User.find_one(User.email == current_user.username)
+     .set({'firstName': (data.first_name
+                         if data.first_name
+                         else current_user.first_name),
+           'lastName': (data.last_name
+                        if data.last_name
+                        else current_user.last_name),
+           'phoneNumber': (data.phone_number
+                           if data.phone_number
+                           else current_user.phone_number),
+           'country': (data.country
+                       if data.country
+                       else current_user.country),
+           'city': (data.city
+                    if data.city
+                    else current_user.city)}))
+    new_user_details = await User.find_one(User.email == current_user.username)
+    if new_user_details is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User is not found in the database after setting user data",
+        )
+    return await convert_user(new_user_details)
 
 
 @router.get("/user/first_name")

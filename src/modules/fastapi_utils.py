@@ -1,6 +1,7 @@
 """FastAPI helper utils and classes."""
 from typing import Optional
 from pydantic import BaseModel
+from datetime import datetime
 
 
 class Token(BaseModel):
@@ -23,11 +24,53 @@ class UserModel(BaseModel):
     first_name: str
     last_name: str
     phone_number: int
+    is_admin: Optional[bool] = False
     country: Optional[str] = None
     city: Optional[str] = None
 
 
-class UserInDB(UserModel):
-    """Placeholder TODO: replace."""
+class UserEditModel(BaseModel):
+    """User data model (editing)."""
 
-    hashed_password: str
+    username: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    phone_number: Optional[int] = None
+    is_admin: Optional[bool] = False
+    country: Optional[str] = None
+    city: Optional[str] = None
+
+
+class CustomListingModel(BaseModel):
+    """Custom Listing model."""
+
+    trackingId: int
+    lot: int
+    kind: str
+    name: str
+    companyInn: int
+    basePrice: float
+    isActive: bool
+    dynamic: int
+    tsEnd: datetime
+    tsBegin: datetime
+    winnerInn: int | None = None
+
+
+class CustomListingCreateModel(BaseModel):
+    """Custom Listing creation model."""
+
+    trackingId: int
+    lot: int
+    kind: str
+    name: str
+    description: str
+    basePrice: float
+    tsEnd: datetime
+
+
+class PostRequestResponseModel(BaseModel):
+    """Post request response model."""
+
+    message: str
+    status: int

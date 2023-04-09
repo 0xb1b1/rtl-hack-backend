@@ -76,8 +76,9 @@ async def get_current_user(
 async def convert_user(user: User) -> UserModel:
     """Convert User DB model to Pydantic UserModel."""
     return UserModel(username=str(user.email),
-                     first_name=str(user.first_name),
-                     last_name=str(user.last_name),
-                     phone_number=int(user.phone_number),
+                     first_name=str(user.firstName),
+                     last_name=str(user.lastName),
+                     phone_number=int(user.phoneNumber),
+                     is_admin=user.isAdmin,
                      country=user.country,
                      city=user.city)
